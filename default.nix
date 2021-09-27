@@ -29,7 +29,7 @@ let
   buildDhallUrl =
     { url, hash, dhall-hash }:
     let
-      # file = writeText "${name}.dhall" code;
+      dhallNoHTTP = haskell.lib.appendConfigureFlag dhall "-f-with-http";
 
       cache = ".cache";
 
@@ -41,36 +41,54 @@ let
 
       sourceFile = "source.dhall";
 
+      downloadedEncodedFile =
+        runCommand
+          (baseNameOf url + "-encoded")
+          {
+            outputHashAlgo = null;
+            outputHash = hash;
+            name = baseNameOf url;
+            nativeBuildInputs = [ cacert ];
+          }
+          ''
+            echo "${url} ${dhall-hash}" > in-dhall-file
+            ${dhall}/bin/dhall --alpha --plain --file in-dhall-file | ${dhallNoHTTP}/bin/dhall encode > $out
+          '';
+
+      fileWithCache =
+        runCommand
+          (baseNameOf url + "-cache")
+          { }
+          # TODO: Optionally delete the source file.  Also add an option for producing documentation.
+          # Also, we can probably create the cache file directly without explicitly encoding the source
+          # file again.  We can probably create the binary.dhall file directly, since the buildDhallUrl
+          # function already knows the hash.
+          ''
+            set -x
+            mkdir -p ${cacheDhall}
+
+            export XDG_CACHE_HOME=$PWD/${cache}
+
+            mkdir -p $out/${cacheDhall}
+
+            ${dhallNoHTTP}/bin/dhall decode --file ${downloadedEncodedFile} > $out/${sourceFile}
+
+            SHA_HASH=$(${dhallNoHTTP}/bin/dhall hash <<< $out/${sourceFile})
+
+            echo $SHA_HASH
+
+            HASH_FILE="''${SHA_HASH/sha256:/1220}"
+
+            echo $HASH_FILE
+
+            ${dhallNoHTTP}/bin/dhall encode --file $out/${sourceFile} > $out/${cacheDhall}/$HASH_FILE
+
+            echo "missing $SHA_HASH" > $out/binary.dhall
+          '';
+
     in
-    runCommand
-      (baseNameOf url)
-      {
-        outputHashAlgo = null;
-        outputHash = hash;
-        name = baseNameOf url;
-        nativeBuildInputs = [ cacert ];
-      }
-      # ''
-      #   mkdir -p ${cacheDhall}
 
-      #   export XDG_CACHE_HOME=$PWD/${cache}
-
-      #   mkdir -p $out/${cacheDhall}
-
-      #   ${dhall}/bin/dhall --alpha --plain --file '${file}' > $out/${sourceFile}
-
-      #   SHA_HASH=$(${dhallNoHTTP}/bin/dhall hash <<< $out/${sourceFile})
-
-      #   HASH_FILE="''${SHA_HASH/sha256:/1220}"
-
-      #   ${dhallNoHTTP}/bin/dhall encode --file $out/${sourceFile} > $out/${cacheDhall}/$HASH_FILE
-
-      #   echo "missing $SHA_HASH" > $out/binary.dhall
-      # '';
-      ''
-        echo "${url} ${dhall-hash}" > in-dhall-file
-        ${dhall}/bin/dhall --alpha --plain --file in-dhall-file | ${dhall}/bin/dhall encode > $out
-      '';
+      fileWithCache;
 
   myFODDhallFile = buildDhallUrl {
     url = "https://raw.githubusercontent.com/cdepillabout/example-dhall-repo/c1b0d0327146648dcf8de997b2aa32758f2ed735/example1.dhall";
@@ -88,21 +106,8 @@ let
       document = false;
       dependencies = [
         myFODDhallFile
-        # (buildDhallUrl {
-        #   url = "https://raw.githubusercontent.com/dhall-lang/dhall-lang/9758483fcf20baf270dda5eceb10535d0c0aa5a8/Prelude/List/map.dhall";
-        #   hash = "sha256-3YRf+0Vo1AMn8qgX60LRxhOLkpynWNULwzES7zyIVoA=";
-        # })
-
-        # ((fetchurl {
-        #     url = "https://gist.githubusercontent.com/cdepillabout/2683131f078753fd24723ab8bf1e1b74/raw/7e1b26ff812000e868a4ff108b33a21d03a9a591/example-normal.dhall";
-        #     hash = "sha256-FfUuz5HJTBuqwC1aSWSy7Y+kAWQaLIqV6DBux8HjuNI=";
-        #     downloadToTemp = true;
-        #     postFetch = "${dhall}/bin/dhall --alpha --plain --file \"\$downloadedFile\" | ${dhall}/bin/dhall encode > \$out";
-        #   }).overrideAttrs (oldAttrs: {
-        #     nativeBuildInputs = (oldAttrs.nativeBuildInputs or []) ++ [ cacert ];
-        #   }))
-        ];
-      };
+      ];
+    };
 
   # myDhallFile = dhallToNixUrlFOD {
   #   src = ./.;
