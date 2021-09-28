@@ -1,3 +1,7 @@
+# This Nix file is a proof of concept for how some additional Dhall-related
+# functions should look in Nixpkgs.
+#
+# This is specifically for https://github.com/dhall-lang/dhall-haskell/pull/2304.
 
 let
   nixpkgsSrc = builtins.fetchTarball {
@@ -13,6 +17,9 @@ let
 
   fetchDhallUrl =
     { url, hash, dhall-hash }:
+    let
+      dhallNoHTTP = haskell.lib.appendConfigureFlag dhall "-f-with-http";
+    in
     runCommand
       (baseNameOf url)
       {
@@ -23,11 +30,11 @@ let
       }
       ''
         echo "${url} ${dhall-hash}" > in-dhall-file
-        ${dhall}/bin/dhall --alpha --plain --file in-dhall-file | ${dhall}/bin/dhall encode > $out
+        ${dhall}/bin/dhall --alpha --plain --file in-dhall-file | ${dhallNoHTTP}/bin/dhall encode > $out
       '';
 
   buildDhallUrl =
-    { url, hash, dhall-hash }:
+    { url, hash, dhall-hash }@args:
     let
       dhallNoHTTP = haskell.lib.appendConfigureFlag dhall "-f-with-http";
 
@@ -41,19 +48,7 @@ let
 
       sourceFile = "source.dhall";
 
-      downloadedEncodedFile =
-        runCommand
-          (baseNameOf url + "-encoded")
-          {
-            outputHashAlgo = null;
-            outputHash = hash;
-            name = baseNameOf url;
-            nativeBuildInputs = [ cacert ];
-          }
-          ''
-            echo "${url} ${dhall-hash}" > in-dhall-file
-            ${dhall}/bin/dhall --alpha --plain --file in-dhall-file | ${dhallNoHTTP}/bin/dhall encode > $out
-          '';
+      downloadedEncodedFile = fetchDhallUrl args;
 
       fileWithCache =
         runCommand
