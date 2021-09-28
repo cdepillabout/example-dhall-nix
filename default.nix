@@ -125,11 +125,55 @@ let
       ];
     };
 
-  # myDhallFile = dhallToNixUrlFOD {
-  #   src = ./.;
-  #   file = "mydhallfile.dhall";
-  # };
+  dhallPackageToNix = dhallPackage:
+    let
+      drv = stdenv.mkDerivation {
+        name = "dhall-compiled.nix";
+
+        buildCommand = ''
+          # Dhall requires that the cache is writable, even if it is never written to.
+          # We copy the cache from the input package to the current directory and
+          # set the cache as writable.
+          cp -r "${dhallPackage}/.cache" ./
+          export XDG_CACHE_HOME=$PWD/.cache
+          chmod -R +w ./.cache
+
+          dhall-to-nix <<< "${dhallPackage}/binary.dhall" > $out
+        '';
+
+        buildInputs = [ dhall-nix ];
+      };
+
+    in
+      import drv;
+
+  myNixDhallPackage = dhallPackageToNix myDhallPackage;
+
+  generateDhallDirectoryPackage =
+    { src
+    , file ? "package.dhall"
+    }:
+    stdenv.mkDerivation {
+      name = "dhall-directory-package.nix";
+
+      buildCommand = ''
+        dhall-to-nixpkgs directory --url-fod --file "${file}" "${src}" > $out
+      '';
+
+      buildInputs = [ dhall-nixpkgs ];
+    };
+
+  dhallDirectoryToNix =
+    { src
+    , file ? "package.dhall"
+    }@args:
+    dhallPackageToNix (dhallPackages.callPackage (generateDhallDirectoryPackage args) {});
+
+  myDhallFile = dhallDirectoryToNix {
+    src = ./.;
+    file = "mydhallfile.dhall";
+  };
 
 in
 
-myDhallPackage
+myNixDhallPackage
