@@ -13,7 +13,7 @@ in
 
 with import nixpkgsSrc {};
 
-let
+rec {
 
   # This is a helper function that gives an easy way to use Dhall's remote
   # importing capabilities for downloading a Dhall file.
@@ -135,14 +135,25 @@ let
 
       fileWithCache;
 
+  # This is an example of using buildDhallUrl.
+  # Try running `nix-build ./default.nix -A myFODDhallFile` and take a look at
+  # the result.
   myFODDhallFile = buildDhallUrl {
     url = "https://raw.githubusercontent.com/cdepillabout/example-dhall-repo/c1b0d0327146648dcf8de997b2aa32758f2ed735/example1.dhall";
     hash = "sha256-ZTSiQUXpPbPfPvS8OeK6dDQE6j6NbP27ho1cg9YfENI=";
     dhall-hash = "sha256:6534a24145e93db3df3ef4bc39e2ba743404ea3e8d6cfdbb868d5c83d61f10d2";
   };
 
+  # This is basically an example of what I think
+  # `dhall-to-nixpkgs directory --url-fod` should generate.
+  #
+  # This is very similar to the current output of `dhall-to-nixpkgs directory`,
+  # but the dependencies have been inlined with `buildDhallUrl`.
   myDhallPackage =
-    # { buildDhallDirectoryPackage }:
+    # XXX: The actual `dhall-to-nixpkgs directory --url-fod` function should
+    # generate a function that takes a `buildDhallDirectoryPackage` argument so
+    # it can be used with `dhallPackages.callPackage`, but I removed that here
+    # so it is easier to play around with in the repl.
     dhallPackages.buildDhallDirectoryPackage {
       name = "mydhallfile";
       src = ./.;
@@ -150,6 +161,7 @@ let
       source = false;
       document = false;
       dependencies = [
+        # Dependencies for `./mydhallfile.dhall`.
         (buildDhallUrl {
           url = "https://raw.githubusercontent.com/cdepillabout/example-dhall-repo/c1b0d0327146648dcf8de997b2aa32758f2ed735/example1.dhall";
           hash = "sha256-ZTSiQUXpPbPfPvS8OeK6dDQE6j6NbP27ho1cg9YfENI=";
@@ -161,7 +173,8 @@ let
           dhall-hash = "sha256:dd845ffb4568d40327f2a817eb42d1c6138b929ca758d50bc33112ef3c885680";
         })
 
-        # This is used in ./upperAndDouble.dhall.
+        # Dependencies for `./upperAndDouble.dhall`, which is a local import in
+        # `./mydhallfile.dhall`.
         (buildDhallUrl {
           url = "https://raw.githubusercontent.com/dhall-lang/dhall-lang/9758483fcf20baf270dda5eceb10535d0c0aa5a8/Prelude/Text/upperASCII.dhall";
           hash = "sha256-Ra5PvYFLBHTmXCik7pKyO5eYkvpbtzcwvJlnWueQyik=";
@@ -219,6 +232,4 @@ let
     file = "mydhallfile.dhall";
   };
 
-in
-
-myNixDhallPackage
+}
