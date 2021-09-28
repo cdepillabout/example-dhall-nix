@@ -149,6 +149,9 @@ rec {
   #
   # This is very similar to the current output of `dhall-to-nixpkgs directory`,
   # but the dependencies have been inlined with `buildDhallUrl`.
+  #
+  # You can test this with a command like
+  # `nix-build ./default.nix -A myDhallPackage`
   myDhallPackage =
     # XXX: The actual `dhall-to-nixpkgs directory --url-fod` function should
     # generate a function that takes a `buildDhallDirectoryPackage` argument so
