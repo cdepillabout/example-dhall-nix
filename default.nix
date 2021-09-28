@@ -15,8 +15,22 @@ with import nixpkgsSrc {};
 
 let
 
+  # This is a helper function that gives an easy way to use Dhall's remote
+  # importing capabilities for downloading a Dhall file.
+  # The output Dhall file has all imports resolved, and then is
+  # alpha-normalized and binary-encoded.
+  #
+  # This is used internally in the next function, buildDhallUrl.
+  # fetchDhallUrl could just be defined internally in buildDhallUrl if we don't
+  # want expose this functionality to end users.
   fetchDhallUrl =
-    { url, hash, dhall-hash }:
+    { # URL to have Dhall download.
+      url
+    , # Nix hash.
+      hash
+      # Dhall hash.
+    , dhall-hash
+    }:
     let
       dhallNoHTTP = haskell.lib.appendConfigureFlag dhall "-f-with-http";
     in
@@ -33,8 +47,41 @@ let
         ${dhall}/bin/dhall --alpha --plain --file in-dhall-file | ${dhallNoHTTP}/bin/dhall encode > $out
       '';
 
+  # This is a function suggested in
+  # https://github.com/dhall-lang/dhall-haskell/pull/2304#issuecomment-924597654.
+  #
+  # buildDhallUrl is similar to buildDhallDirectoryPackage or
+  # buildDhallGitHubPackage, but instead builds a Nixpkgs Dhall package
+  # based on a hashed URL.  This will generally be a URL that has an integrity
+  # check in a Dhall file.
+  #
+  # Similar to buildDhallDirectoryPackage and buildDhallGitHubPackage, the output
+  # of this function is a derivation that has a binary.dhall file, along with
+  # a .cache/ directory with the actual contents of the Dhall file from the
+  # suppiled URL.
+  #
+  # This function would need to be a new function in Nixpkgs.  This function
+  # may make it easier to package arbitrary Dhall files in Nixpkgs.
+  #
+  # This function will be used by the new functionality added to
+  # `dhall-to-nixpkgs --url-fod` in order to include arbitrary URLs as
+  # dependencies.
   buildDhallUrl =
-    { url, hash, dhall-hash }@args:
+    { # URL of the input Dhall file.
+      # example: https://raw.githubusercontent.com/cdepillabout/example-dhall-repo/c1b0d0327146648dcf8de997b2aa32758f2ed735/example1.dhall
+      url
+    , # Nix hash of the input Dhall file.
+      # example: sha256-ZTSiQUXpPbPfPvS8OeK6dDQE6j6NbP27ho1cg9YfENI=
+      hash
+    , # Dhall hash of the input Dhall file.
+      # example: sha256:6534a24145e93db3df3ef4bc39e2ba743404ea3e8d6cfdbb868d5c83d61f10d2
+      # (TODO: I imagine it would be possible to programmatically compute a
+      # Dhall-compatible hash given a Nix-compatible hash.  I didn't attempt
+      # that here, so this function just takes both.  In practice, I imagine
+      # most users won't write calls to buildDhallUrl by hand, but they will
+      # instead by generated automatically by dhall-to-nixpkgs.)
+      dhall-hash
+    }@args:
     let
       dhallNoHTTP = haskell.lib.appendConfigureFlag dhall "-f-with-http";
 
@@ -54,10 +101,13 @@ let
         runCommand
           (baseNameOf url + "-cache")
           { }
-          # TODO: Optionally delete the source file.  Also add an option for producing documentation.
-          # Also, we can probably create the cache file directly without explicitly encoding the source
-          # file again.  We can probably create the binary.dhall file directly, since the buildDhallUrl
-          # function already knows the hash.
+          # TODO: Optionally delete the source file.  Also add an option for
+          # producing documentation.
+          #
+          # TODO: We can probably create the cache file directly without
+          # explicitly encoding the source file again.  We can probably create
+          # the binary.dhall file directly, since the buildDhallUrl function
+          # already knows the hash.
           ''
             set -x
             mkdir -p ${cacheDhall}
