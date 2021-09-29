@@ -1,7 +1,8 @@
 # This Nix file is a proof of concept for how some additional Dhall-related
 # functions should look in Nixpkgs.
 #
-# This is specifically for https://github.com/dhall-lang/dhall-haskell/pull/2304.
+# This is specifically for
+# https://github.com/dhall-lang/dhall-haskell/pull/2304.
 
 let
   nixpkgsSrc = builtins.fetchTarball {
@@ -47,7 +48,7 @@ rec {
         ${dhall}/bin/dhall --alpha --plain --file in-dhall-file | ${dhallNoHTTP}/bin/dhall encode > $out
       '';
 
-  # This is a function suggested in
+  # This is the function suggested in
   # https://github.com/dhall-lang/dhall-haskell/pull/2304#issuecomment-924597654.
   #
   # buildDhallUrl is similar to buildDhallDirectoryPackage or
@@ -78,8 +79,8 @@ rec {
       # (TODO: I imagine it would be possible to programmatically compute a
       # Dhall-compatible hash given a Nix-compatible hash.  I didn't attempt
       # that here, so this function just takes both.  In practice, I imagine
-      # most users won't write calls to buildDhallUrl by hand, but they will
-      # instead by generated automatically by dhall-to-nixpkgs.)
+      # most users won't write calls to buildDhallUrl by hand, but calls to
+      # buildDhallUrl will be generated automatically by dhall-to-nixpkgs.)
       dhall-hash
     }@args:
     let
@@ -154,9 +155,10 @@ rec {
   # `nix-build ./default.nix -A myDhallPackage`
   myDhallPackage =
     # XXX: The actual `dhall-to-nixpkgs directory --url-fod` function should
-    # generate a function that takes a `buildDhallDirectoryPackage` argument so
-    # it can be used with `dhallPackages.callPackage`, but I removed that here
-    # so it is easier to play around with in the repl.
+    # generate a function that takes a `buildDhallDirectoryPackage` and
+    # `buildDhallUrl` argument so it can be used with
+    # `dhallPackages.callPackage`, but I removed that here so it is easier to
+    # play around with in the repl.
     dhallPackages.buildDhallDirectoryPackage {
       name = "mydhallfile";
       src = ./.;
@@ -186,6 +188,13 @@ rec {
       ];
     };
 
+  # This function is similar to the current dhallToNix function in Nixpkgs, but
+  # it takes a Dhall Nix package instead of raw Dhall code.
+  #
+  # This function is used below in dhallDirectoryToNix.  I imagine adding
+  # dhallPackageToNix, since it is a good compliment to the current dhallToNix
+  # function, but it is not strictly necessary.  It could be inlined in
+  # dhallDirectoryToNix.
   dhallPackageToNix = dhallPackage:
     let
       drv = stdenv.mkDerivation {
@@ -208,8 +217,31 @@ rec {
     in
       import drv;
 
+  # This is an example of using dhallPackageToNix.
+  #
+  # This calls dhallPackageToNix on myDhallPackage defined above.
+  # You can see the output of this in the console:
+  #
+  # $ nix-instantiate --eval -E '(import ./default.nix).myNixDhallPackage'
+  # [ "BILLBILLbillbill" "JANEJANEjanejane" "TESTTESTtesttest" "TESTTESTtesttest" "TESTTESTtesttest" ]
   myNixDhallPackage = dhallPackageToNix myDhallPackage;
 
+  # This function calls `dhall-to-nixpkgs directory --url-fod` within a Nix
+  # derivation.
+  #
+  # This is possible because `dhall-to-nixpkgs directory --url-fod` will turn
+  # remote Dhall imports into FOD (with buildDhallUrl above), so
+  # no network access is necessary.
+  #
+  # myDhallPackage above is an example of a Nix file that
+  # generateDhallDirectoryPackage would produce.
+  #
+  # This is another helper function for dhallDirectoryToNix.  It is not
+  # necessary to export this in Nixpkgs.  It could be inlined in
+  # dhallDirectoryToNix.
+  #
+  # (Note that this doesn't currently work until
+  # `dhall-to-nixpkgs directory --url-fod` actually gets implemented.)
   generateDhallDirectoryPackage =
     { src
     , file ? "package.dhall"
@@ -224,12 +256,35 @@ rec {
       buildInputs = [ dhall-nixpkgs ];
     };
 
+  # This function is the culmination of the Nix code in this file.  The above
+  # Nix functions have been building to this.
+  #
+  # dhallDirectoryToNix is similar to the current dhallToNix function in Nixpkgs,
+  # but it takes a directory of Dhall files as input.  It turns all Dhall remote imports
+  # into FOD for ease-of-use.
+  #
+  # This first generates a Dhall Nix package with
+  # generateDhallDirectoryPackage, and then transforms it to Nix with
+  # dhallPackageToNix.
+  #
+  # This uses IFD, so it won't be possible to use this in Nixpkgs, but it
+  # should make it easy for end-users to read the output of a directory of Dhall
+  # code in Nix.
+  #
+  # (Note that this doesn't currently work until generateDhallDirectoryPackage
+  # is fully implemented.)
   dhallDirectoryToNix =
     { src
     , file ? "package.dhall"
     }@args:
     dhallPackageToNix (dhallPackages.callPackage (generateDhallDirectoryPackage args) {});
 
+  # This is an example of using dhallDirectoryToNix on the Dhall files in this
+  # repo.
+  #
+  # You can see that this would be quite easy for an end-user to use.  All the
+  # heavy-lifting is done behind-the-scenes by generateDhallDirectoryPackage,
+  # dhall-to-nixpkgs, and dhallPackageToNix.
   myDhallFile = dhallDirectoryToNix {
     src = ./.;
     file = "mydhallfile.dhall";
